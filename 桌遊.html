@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <title>一體成形小遊戲（迷宮魔王難版）</title>
+  <style>
+    body { font-family: sans-serif; background: #eef; padding: 20px; text-align: center; }
+    #menu { margin-bottom: 20px; }
+    #menu button { padding: 10px 20px; margin: 0 5px; cursor: pointer; }
+    .game { display: none; margin-top: 20px; }
+    canvas { border: 1px solid #aaa; display: block; margin: 0 auto; }
+    label, select, input, button { font-size: 16px; margin: 0 5px; }
+  </style>
+</head>
+<body>
+
+  <h1>🎮 一體成形小遊戲（迷宮魔王難版）</h1>
+  <div id="menu">
+    <button type="button" onclick="showGame('maze')">🌀 迷宮</button>
+    <button type="button" onclick="showGame('guess')">❓ 猜數字</button>
+    <button type="button" onclick="showGame('flappy')">🐦 Flappy Bird</button>
+  </div>
+
+  <!-- 迷宮 -->
+  <div id="maze" class="game">
+    <h2>🌀 迷宮遊戲</h2>
+    <label for="mazeDiff">難度：</label>
+    <select id="mazeDiff">
+      <option value="8">簡單 (8×8)</option>
+      <option value="10" selected>普通 (10×10)</option>
+      <option value="12">困難 (12×12)</option>
+      <option value="16">超難 (16×16)</option>
+      <option value="100">魔王難 (100×100)</option>
+    </select>
+    <button type="button" onclick="resetMaze()">生成迷宮</button>
+    <canvas id="mazeCanvas" width="400" height="400"></canvas>
+  </div>
+
+  <!-- 猜數字 -->
+  <div id="guess" class="game">
+    <h2>❓ 猜數字</h2>
+    <label>範圍：</label>
+    <input id="minInput" type="number" value="1" style="width:60px;">
+    <span>～</span>
+    <input id="maxInput" type="number" value="100" style="width:60px;">
+    <button type="button" onclick="setRange()">設定範圍</button>
+    <br><br>
+    <input id="guessInput" type="number" placeholder="輸入數字">
+    <button type="button" onclick="checkGuess()">猜！</button>
+    <p id="guessResult"></p>
+  </div>
+
+  <!-- Flappy Bird -->
+  <div id="flappy" class="game">
+    <h2>🐦 Flappy Bird</h2>
+    <canvas id="flappyCanvas" width="400" height="400"></canvas>
+  </div>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      showGame('maze');
+      resetGuess();
+      initFlappy();
+      flappyLoop();
+    });
+
+    function showGame(id) {
+      document.querySelectorAll('.game').forEach(g => g.style.display = 'none');
+      document.getElementById(id).style.display = 'block';
+      if (id === 'maze') resetMaze();
+      if (id === 'guess') resetGuess();
+      if (id === 'flappy') initFlappy();
+    }
+
+    // ===== 迷宮 =====
+    const mCtx = document.getElementById('mazeCanvas').getContext('2d');
+    let cols, rows, cell, maze, px, py;
+
+    // 檢查迷宮可通行性
+    function isSolvable() {
+      const visited = Array.from({ length: rows }, () => Array(cols).fill(false));
+      const queue = [[0,0]];
+      visited[0][0] = true;
+      while (queue.length) {
+        const [y,x] = queue.shift();
+        if (y === rows-1 && x === cols-1) return true;
+        [[1,0],[-1,0],[0,1],[0,-1]].forEach(([dy,dx]) => {
+          const ny = y+dy, nx = x+dx;
+          if (ny>=0 && ny<rows && nx>=0 && nx<cols &&
+              !visited[ny][nx] && maze[ny][nx]===0) {
+            visited[ny][nx] = true;
+            queue.push([ny,nx]);
+          }
+        });
+      }
+      return false;
+    }
+
+    function resetMaze() {
+      cols = rows = parseInt(document.getElementById('mazeDiff').value);
+      cell = 400 / cols;
+      do {
+        maze = Array.from({ length: rows }, () => Array(cols).fill(1));
+        for (let y = 0; y < rows; y++) {
+          for (let x = 0; x < cols; x++) {
+            maze[y][x] = Math.random() < 0.7 ? 0 : 1;
+          }
+        }
+        maze[0][0] = 0;
+        maze[rows-1][cols-1] = 0;
+      } while (!isSolvable());
+      px = py = 0;
+      drawMaze();
+    }
+
+    function drawMaze() {
+      mCtx.clearRect(0,0,400,400);
+      for (let y = 0; y < rows; y++) {
+        for (let x = 0; x < cols; x++) {
+          mCtx.fillStyle = maze[y][x] ? '#000' : '#fff';
+          mCtx.fillRect(x*cell, y*cell, cell, cell);
+        }
+      }
+      mCtx.strokeStyle = 'red';
+      mCtx.lineWidth = 3;
+      mCtx.strokeRect((cols-1)*cell, (rows-1)*cell, cell, cell);
+      mCtx.fillStyle = 'red';
+      mCtx.fillRect(px*cell, py*cell, cell, cell);
+    }
+
+    document.addEventListener('keydown', e => {
+      if (document.getElementById('maze').style.display === 'block') {
+        let dx=0, dy=0;
+        if (e.key==='ArrowUp') dy=-1;
+        if (e.key==='ArrowDown') dy=1;
+        if (e.key==='ArrowLeft') dx=-1;
+        if (e.key==='ArrowRight') dx=1;
+        if (maze[py+dy]?.[px+dx]===0) {
+          px+=dx; py+=dy; drawMaze();
+          if (px===cols-1 && py===rows-1) alert('🎉 你到達出口！');
+        }
+      }
+    });
+
+    // ===== 猜數字 =====
+    let minVal, maxVal, answer;
+    function resetGuess(){
+      minVal = parseInt(document.getElementById('minInput').value)||1;
+      maxVal = parseInt(document.getElementById('maxInput').value)||100;
+      if (maxVal<=minVal) maxVal = minVal+1;
+      answer = Math.floor(Math.random()*(maxVal-minVal+1))+minVal;
+      document.getElementById('guessResult').textContent = '';
+      document.getElementById('guessInput').value = '';
+    }
+    function setRange(){
+      resetGuess();
+      alert(`範圍已設定：${minVal}～${maxVal}`);
+    }
+    function checkGuess(){
+      const v = parseInt(document.getElementById('guessInput').value);
+      let msg;
+      if (v===answer) msg='🎉 恭喜答對！';
+      else if (v<answer) msg='太小了！';
+      else msg='太大了！';
+      document.getElementById('guessResult').textContent = msg;
+    }
+
+    // ===== Flappy Bird =====
+    const fC = document.getElementById('flappyCanvas'),
+          fCtx = fC.getContext('2d');
+    let fy, fv, pipes, fframe, fScore;
+    function initFlappy(){
+      fy=150; fv=0; pipes=[]; fframe=0; fScore=0;
+    }
+    document.addEventListener('keydown', e=>{
+      if(document.getElementById('flappy').style.display==='block' && e.key===' '){
+        e.preventDefault();
+        fv=-6;
+      }
+    });
+    function flappyLoop(){
+      if(document.getElementById('flappy').style.display==='block'){
+        fv+=0.5; fy+=fv;
+        if(fframe%100===0) pipes.push({x:400,h:Math.random()*200+50,passed:false});
+        fCtx.clearRect(0,0,400,400);
+        fCtx.fillStyle='skyblue'; fCtx.fillRect(0,0,400,400);
+        fCtx.fillStyle='yellow'; fCtx.fillRect(100,fy,20,20);
+        fCtx.fillStyle='green';
+        pipes.forEach(p=>{
+          p.x-=2;
+          fCtx.fillRect(p.x,0,30,p.h);
+          fCtx.fillRect(p.x,p.h+100,30,400);
+          if(p.x<120 && p.x+30>100 && (fy<p.h || fy>p.h+100)){
+            alert('💥 撞到了！遊戲重開');
+            initFlappy();
+          }
+          if(!p.passed && p.x+30<100){
+            fScore++; p.passed=true;
+          }
+        });
+        fCtx.fillStyle='black';
+        fCtx.font='20px sans-serif';
+        fCtx.fillText('分數: '+fScore,10,25);
+        fframe++;
+      }
+      requestAnimationFrame(flappyLoop);
+    }
+  </script>
+
+</body>
+</html>
